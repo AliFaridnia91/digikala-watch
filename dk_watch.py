@@ -16,6 +16,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
 API = "https://api.digikala.com/v2/product/{}/"
@@ -31,10 +32,18 @@ def product_id(arg):
     return m.group(1)
 
 
+# Keeps cookies between requests, for sites that set one on a redirect.
+OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+
+
 def fetch(pid):
     req = urllib.request.Request(API.format(pid), headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)["data"]["product"]
+    try:
+        with OPENER.open(req, timeout=30) as r:
+            return json.load(r)["data"]["product"]
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"HTTP {e.code} from {e.url}, Location: {e.headers.get('Location')}, "
+                           f"body: {e.read(300)!r}") from None
 
 
 def options(variant):
