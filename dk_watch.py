@@ -107,6 +107,48 @@ def notify(title, msg, url=""):
         subprocess.run(["say", "Digikala item is available"], check=False)
 
 
+def track_new(a, pid, url):
+    """Keep watching; alert for each variant that appears in stock. Returns 0 at --duration."""
+    try:
+        with open(a.track_new, encoding="utf-8") as f:
+            seen = set(json.load(f)["in_stock"])
+    except (OSError, ValueError, KeyError):
+        seen = None  # first run: record what is on sale now, alert from then on
+    print(f"Watching {url} for newly available variants, every {a.interval}s. Ctrl+C to stop.")
+    deadline = time.time() + a.duration if a.duration else None
+    while True:
+        stamp = time.strftime("%H:%M:%S")
+        try:
+            p = fetch(pid)
+            cheapest = {}
+            for v in p.get("variants") or []:
+                if in_stock(v) and matches(v, a.variant, a.exclude):
+                    key = " / ".join(options(v)) or "(no options)"
+                    if key not in cheapest or v["price"]["selling_price"] < cheapest[key]["price"]["selling_price"]:
+                        cheapest[key] = v
+            now = set(cheapest)
+            if seen is None:
+                print(f"[{stamp}] starting point, on sale now: {', '.join(sorted(now)) or 'nothing'}")
+            else:
+                new = sorted(now - seen)
+                if new:
+                    lines = [f"{k} - {toman(cheapest[k]['price']['selling_price'])} T ({cheapest[k]['seller']['title']})"
+                             for k in new]
+                    print(f"[{stamp}] NEW: " + "; ".join(lines))
+                    notify("Digikala: new variant available!", "\n".join(lines), url)
+                else:
+                    print(f"[{stamp}] nothing new ({len(now)} on sale)")
+            if now != seen:
+                seen = now
+                with open(a.track_new, "w", encoding="utf-8") as f:
+                    json.dump({"in_stock": sorted(seen)}, f, ensure_ascii=False, indent=1)
+        except Exception as e:  # network hiccups, rate limits: keep going
+            print(f"[{stamp}] error: {e}")
+        if a.once or (deadline and time.time() + a.interval > deadline):
+            return 0
+        time.sleep(a.interval + random.randint(0, 5))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("product", help="product URL (…/dkp-12345/…) or id")
@@ -118,6 +160,9 @@ def main():
     ap.add_argument("--once", action="store_true", help="check once and exit (code 0 = found)")
     ap.add_argument("--duration", type=int, help="give up after this many seconds (exit code 1)")
     ap.add_argument("--test-alert", action="store_true", help="send a test alert and exit")
+    ap.add_argument("--track-new", metavar="STATE_FILE",
+                    help="alert whenever a variant comes in stock that was not on sale at the previous check; "
+                         "the last seen variants are kept in STATE_FILE")
     a = ap.parse_args()
     pid = product_id(a.product)
     url = f"https://www.digikala.com/product/dkp-{pid}/"
@@ -134,6 +179,9 @@ def main():
             print(f"  {' / '.join(options(v)) or '(no options)':30} {toman(v['price']['selling_price']):>14} T  "
                   f"{v['seller']['title']}  [{v['status']}]")
         return
+
+    if a.track_new:
+        return track_new(a, pid, url)
 
     if not a.variant:
         sys.exit("Give --variant (or use --list to see the options).")

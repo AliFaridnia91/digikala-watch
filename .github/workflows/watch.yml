@@ -1,5 +1,6 @@
-# Checks the Digikala product every minute and sends a Telegram message when a
-# green variant (other than سبز روشن) is in stock, then turns itself off.
+# Checks the Digikala product every minute and sends a Telegram message whenever
+# a variant comes in stock that was not on sale at the previous check. The last
+# seen variants are kept in state.json, committed back to the repo when they change.
 #
 # GitHub only starts scheduled runs every few minutes (and sometimes late), so
 # each run is started every 30 minutes and keeps checking once a minute for ~28
@@ -21,8 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  actions: write
-  contents: read
+  contents: write
 
 env:
   PRODUCT: "21696246"
@@ -38,18 +38,17 @@ jobs:
 
       - name: Test alert
         if: ${{ inputs.test_alert }}
-        run: python3 dk_watch.py "$PRODUCT" --test-alert
+        run: python3 -u dk_watch.py "$PRODUCT" --test-alert
 
       - name: Watch for ~28 minutes
         if: ${{ !inputs.test_alert }}
-        id: watch
-        run: |
-          set +e
-          python3 dk_watch.py "$PRODUCT" --variant "سبز" --exclude "روشن" --interval 60 --duration 1680
-          echo "code=$?" >> "$GITHUB_OUTPUT"
+        run: python3 -u dk_watch.py "$PRODUCT" --track-new state.json --interval 60 --duration 1680
 
-      - name: Stop watching after an alert
-        if: ${{ steps.watch.outputs.code == '0' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow disable "${{ github.workflow }}" --repo "${{ github.repository }}"
+      - name: Save what is on sale now
+        if: ${{ always() && !inputs.test_alert }}
+        run: |
+          git diff --quiet -- state.json && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update on-sale variants" -- state.json
+          git pull --rebase -X theirs && git push
