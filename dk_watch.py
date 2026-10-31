@@ -96,6 +96,7 @@ def telegram(text):
         if not chats:
             raise RuntimeError("No chat found: open your bot in Telegram and press Start (or send it any message).")
         chat = chats[-1]
+        print(f"Using Telegram chat id {chat} (save it as TELEGRAM_CHAT_ID; the bot forgets it after 24 hours).")
     body = json.dumps({"chat_id": chat, "text": text}).encode()
     req = urllib.request.Request(api + "sendMessage", data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as r:
