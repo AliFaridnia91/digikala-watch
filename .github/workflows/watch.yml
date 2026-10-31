@@ -1,0 +1,55 @@
+# Checks the Digikala product every minute and sends a Telegram message when a
+# green variant (other than سبز روشن) is in stock, then turns itself off.
+#
+# GitHub only starts scheduled runs every few minutes (and sometimes late), so
+# each run is started every 30 minutes and keeps checking once a minute for ~28
+# minutes. Keep the repository public: Actions minutes are free and unlimited there.
+name: Digikala watch
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "Only send a test Telegram message"
+        type: boolean
+        default: false
+
+concurrency:
+  group: digikala-watch
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+env:
+  PRODUCT: "21696246"
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test alert
+        if: ${{ inputs.test_alert }}
+        run: python3 dk_watch.py "$PRODUCT" --test-alert
+
+      - name: Watch for ~28 minutes
+        if: ${{ !inputs.test_alert }}
+        id: watch
+        run: |
+          set +e
+          python3 dk_watch.py "$PRODUCT" --variant "سبز" --exclude "روشن" --interval 60 --duration 1680
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Stop watching after an alert
+        if: ${{ steps.watch.outputs.code == '0' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow disable "${{ github.workflow }}" --repo "${{ github.repository }}"
