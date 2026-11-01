@@ -1,6 +1,6 @@
 # Digikala watch
 
-Checks a Digikala product every minute (GitHub Actions) and sends a Telegram
+Checks a Digikala product every 4 minutes (GitHub Actions) and sends a Telegram
 message whenever a variant comes in stock that was not on sale at the previous
 check. The last seen variants are kept in `state.json`.
 

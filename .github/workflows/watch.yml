@@ -1,9 +1,9 @@
-# Checks the Digikala product every minute and sends a Telegram message whenever
+# Checks the Digikala product every 4 minutes and sends a Telegram message whenever
 # a variant comes in stock that was not on sale at the previous check. The last
 # seen variants are kept in state.json, committed back to the repo when they change.
 #
 # GitHub only starts scheduled runs every few minutes (and sometimes late), so
-# each run is started every 30 minutes and keeps checking once a minute for ~28
+# each run is started every 30 minutes and keeps checking every 4 minutes for ~28
 # minutes. Keep the repository public: Actions minutes are free and unlimited there.
 name: Digikala watch
 
@@ -42,7 +42,7 @@ jobs:
 
       - name: Watch for ~28 minutes
         if: ${{ !inputs.test_alert }}
-        run: python3 -u dk_watch.py "$PRODUCT" --track-new state.json --interval 60 --duration 1680
+        run: python3 -u dk_watch.py "$PRODUCT" --track-new state.json --interval 240 --duration 1680
 
       - name: Save what is on sale now
         if: ${{ always() && !inputs.test_alert }}
