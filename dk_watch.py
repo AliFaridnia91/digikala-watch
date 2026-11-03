@@ -99,22 +99,35 @@ def telegram(text):
         print(f"Using Telegram chat id {chat} (save it as TELEGRAM_CHAT_ID; the bot forgets it after 24 hours).")
     body = json.dumps({"chat_id": chat, "text": text}).encode()
     req = urllib.request.Request(api + "sendMessage", data=body, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=60) as r:
         return json.load(r).get("ok", False)
 
 
 def notify(title, msg, url=""):
     print("\a", end="", flush=True)
-    try:
-        if telegram(f"{title}\n{msg}\n{url}".strip()):
-            print("Telegram message sent.")
-    except Exception as e:
-        print(f"Telegram failed: {e}")
+    # Telegram sometimes times out; try again a few times before giving up.
+    for attempt, pause in enumerate([10, 30, 60, 120, None], 1):
+        try:
+            if telegram(f"{title}\n{msg}\n{url}".strip()):
+                print("Telegram message sent.")
+            break
+        except Exception as e:
+            print(f"Telegram failed (attempt {attempt}): {e}")
+            if pause is None:
+                break
+            time.sleep(pause)
     if sys.platform == "darwin":
         q = lambda s: json.dumps(s, ensure_ascii=False)
         script = f'display notification {q(msg)} with title {q(title)} sound name "Glass"'
         subprocess.run(["osascript", "-e", script], check=False)
         subprocess.run(["say", "Digikala item is available"], check=False)
+
+
+def wait(a):
+    """Sleep about --interval seconds, randomly up to --jitter seconds shorter or longer."""
+    secs = max(1, a.interval + random.uniform(-a.jitter, a.jitter))
+    print(f"  next check in {int(secs // 60)}:{int(secs % 60):02d}")
+    time.sleep(secs)
 
 
 def track_new(a, pid, url):
@@ -154,9 +167,9 @@ def track_new(a, pid, url):
                     json.dump({"in_stock": sorted(seen)}, f, ensure_ascii=False, indent=1)
         except Exception as e:  # network hiccups, rate limits: keep going
             print(f"[{stamp}] error: {e}")
-        if a.once or (deadline and time.time() + a.interval > deadline):
+        if a.once or (deadline and time.time() + a.interval + a.jitter > deadline):
             return 0
-        time.sleep(a.interval + random.randint(0, 5))
+        wait(a)
 
 
 def main():
@@ -166,6 +179,8 @@ def main():
     ap.add_argument("--exclude", action="append", default=[], help="skip variants whose options contain this text")
     ap.add_argument("--max-price", type=int, help="only alert at or below this price (Toman)")
     ap.add_argument("--interval", type=int, default=120, help="seconds between checks (default 120)")
+    ap.add_argument("--jitter", type=int, default=5,
+                    help="vary each wait randomly by up to this many seconds, either way (default 5)")
     ap.add_argument("--list", action="store_true", help="show the variants currently on sale and exit")
     ap.add_argument("--once", action="store_true", help="check once and exit (code 0 = found)")
     ap.add_argument("--duration", type=int, help="give up after this many seconds (exit code 1)")
@@ -225,9 +240,9 @@ def main():
             print(f"[{time.strftime('%H:%M:%S')}] error: {e}")
             if a.once:
                 return 2
-        if deadline and time.time() + a.interval > deadline:
+        if deadline and time.time() + a.interval + a.jitter > deadline:
             return 1
-        time.sleep(a.interval + random.randint(0, 5))
+        wait(a)
 
 
 if __name__ == "__main__":
